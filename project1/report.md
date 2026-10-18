@@ -20,22 +20,46 @@ The objective of this laboratory exercise was to implement a multilayer binary c
 
 ## 2. Dataset and preprocessing
 
-The **Breast Cancer Wisconsin (Diagnostic)** dataset was loaded using `sklearn.datasets.load_breast_cancer()`.
+The **Breast Cancer Wisconsin (Diagnostic)** dataset was loaded using `sklearn.datasets.load_breast_cancer()`. It is a copy of the UCI dataset distributed with scikit-learn. Each sample represents a breast mass described by numerical measurements of cell nuclei from a digitized fine-needle aspirate (FNA) image. The classification task is to distinguish malignant from benign masses; the model receives extracted measurements rather than raw images.
 
 | Property | Value |
 |---|---|
 | Total samples | 569 |
 | Numerical input features | 30 |
 | Target classes | 2 |
-| Class `0` | Malignant (cancerous) |
-| Class `1` | Benign (non-cancerous) |
+| Class `0` | Malignant (cancerous): 212 samples, approximately 37.3% |
+| Class `1` | Benign (non-cancerous): 357 samples, approximately 62.7% |
+| Missing feature values | None |
 | Training samples | 341 |
 | Validation samples | 113 |
 | Test samples | 115 |
 
-The dataset was split using the project's `train_val_test_split` helper. The same split was used for all learning-rate configurations within the experiment.
+### 2.1 Input features
 
-**Feature standardization** was performed with `StandardScaler`. Importantly, the scaler was *fitted on training data only* and then applied to validation and test features:
+The 30 inputs are derived from the following 10 measurements of cell nuclei:
+
+| Measurement | Description |
+|---|---|
+| Radius | Mean distance from the nucleus center to points on its boundary |
+| Texture | Standard deviation of grayscale values |
+| Perimeter | Length of the nucleus boundary |
+| Area | Area of the nucleus |
+| Smoothness | Local variation in radius lengths |
+| Compactness | Shape measure calculated as perimeter squared divided by area, minus 1 |
+| Concavity | Severity of inward-curving portions of the boundary |
+| Concave points | Number of inward-curving portions of the boundary |
+| Symmetry | Symmetry of the nucleus shape |
+| Fractal dimension | Measure of boundary complexity |
+
+For each measurement, the dataset contains its **mean**, **standard error**, and **worst value**, where the worst value is the mean of the three largest values. This gives **10 measurements × 3 summaries = 30 numerical features**. For example, radius contributes mean radius, radius error, and worst radius. The diagnosis is the target label and is not included among the input features.
+
+Dataset reference: [scikit-learn dataset documentation](https://scikit-learn.org/stable/datasets/toy_dataset.html#breast-cancer-dataset). The description and class counts were also checked against the dataset metadata bundled with the project's installed scikit-learn package.
+
+### 2.2 Splitting and preprocessing
+
+The dataset was split using the project's `train_val_test_split` helper. It shuffles sample indices with `np.random.default_rng(seed=42)` and assigns approximately **60% to training, 20% to validation, and 20% to testing**. The training and validation sizes are rounded down, and all remaining samples form the test set, giving 341, 113, and 115 samples respectively. The split is **random and non-stratified**, so class proportions are not explicitly preserved. The same split was used for all learning-rate configurations within the experiment.
+
+**Feature standardization** was performed with `StandardScaler`. The scaler was fitted on training data only and then applied to validation and test features:
 
 ```python
 scaler = StandardScaler()
@@ -44,9 +68,7 @@ X_val = scaler.transform(X_val)
 X_test = scaler.transform(X_test)
 ```
 
-This prevents validation/test statistics from leaking into preprocessing. Input features and binary targets were converted to PyTorch tensors with `dtype=torch.float32`.
-
-> Note: The custom splitting helper's internal strategy (for example, whether splitting was stratified) was not independently verified for this report.
+This scales each feature using its training-set mean and standard deviation, preventing validation/test statistics from leaking into preprocessing. Input features and binary targets were converted to PyTorch tensors with `dtype=torch.float32`.
 
 ## 3. Baseline and neural-network architecture
 
@@ -113,7 +135,9 @@ Three models were trained for 300 epochs each. The following results were obtain
 
 ### 5.1 Learning rate = 0.0001: insufficient learning
 
-[Training and validation loss at LR = 0.0001]
+![Training and validation BCE loss over 300 epochs at learning rate 0.0001](plots/loss-lr-0-0001.png)
+
+*Figure 1. LR = 0.0001: both losses decrease only slightly, indicating slow learning within the epoch budget.*
 
 Both training and validation losses decreased only slightly during 300 epochs and remained close to 0.7. Validation accuracy was **54.87%**, below the majority baseline's **67.26%**. The optimizer's updates were too small for effective convergence within the given training budget.
 
@@ -123,13 +147,17 @@ Both training and validation losses decreased only slightly during 300 epochs an
 
 ### 5.2 Learning rate = 0.01: stable, gradual convergence
 
-[Training and validation loss at LR = 0.01]
+![Training and validation BCE loss over 300 epochs at learning rate 0.01](plots/loss-lr-0-01.png)
+
+*Figure 2. LR = 0.01: training and validation losses decrease smoothly and remain close.*
 
 Both loss curves decreased smoothly through the 300-epoch budget. Validation loss remained close to training loss and did not turn upward. The network reached **93.81% validation accuracy**, indicating successful learning with no clear signs of overfitting within the observed interval. The curves had not completely flattened by epoch 300, so training might have continued to improve with additional epochs.
 
 ### 5.3 Learning rate = 0.5: rapid learning with mild late overfitting
 
-[Training and validation loss at LR = 0.5]
+![Training and validation BCE loss over 300 epochs at learning rate 0.5, with the best epoch marked](plots/loss-lr-0-5.png)
+
+*Figure 3. LR = 0.5: validation loss reaches its minimum at epoch 193, then rises slightly as training loss continues to fall.*
 
 This setting reduced training and validation loss much faster than the lower learning rates. It did **not** produce oscillations or exploding losses; therefore, this experiment does not demonstrate unstable training at LR `0.5`.
 
@@ -139,7 +167,9 @@ Validation loss reached its minimum at **epoch 193** and then increased slightly
 
 To address the late increase in validation loss for the LR `0.5` configuration, the training procedure tracked the best validation loss and saved a deep copy of the corresponding model parameters. This is a **best-checkpoint selection approach based on validation performance** (an early-stopping-style remedy); training still ran to epoch 300 so that both outcomes could be compared.
 
-[Loss curves up to the best epoch (193)]
+![Training and validation BCE loss at learning rate 0.5 through the selected epoch 193](plots/loss-lr-0-5-best-epoch.png)
+
+*Figure 4. Loss curves through epoch 193, the checkpoint selected by minimum validation loss.*
 
 | Comparison | Selected checkpoint (epoch 193) | Last checkpoint (epoch 300) |
 |---|---:|---:|
